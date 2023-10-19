@@ -367,10 +367,113 @@ try {
         }
     }
 
+###########
+	function getALObjectFromCodeCoverage {
+        Param(
+            [Parameter(Mandatory=$false)]
+            $codeCoverage
+        )
+        $alObjects = @()
+        $lastObject = ''
+        $lastObjectId = 0
+        $lastObjectType = ''
+        $lastObjectTotalLines = 0
+        $lastObjectHitLines = 0
+        foreach($jsonObj in $codeCoverage)
+        {
+            if((-not($jsonObj.ObjectID -ge 50000 -and $jsonObj.ObjectID -le 99999)) -and $jsonObj.LineType -eq 'Code')
+            {
+                if(($jsonObj.ObjectID -eq $lastObjectId) -and ($jsonObj.ObjectType -eq $lastObjectType))
+                { 
+                    $lastObjectTotalLines++
+                    if($jsonObj.NoOfHits -gt 0)
+                    {
+                        $lastObjectHitLines++
+                    }
+                }
+                else
+                {
+                    if(-not ($lastObjectId -eq 0))
+                    {
+                        $data = @{"ObjectId"=$lastObjectId ;"ObjectType"=$lastObjectType; "TotalLines" = $lastObjectTotalLines; "HitLines"=$lastObjectHitLines}
+                        $alObjects += $data;
+                    }
+
+                    $lastObjectId = $jsonObj.ObjectID
+                    $lastObjectType = $jsonObj.ObjectType
+                    $lastObjectTotalLines = 0
+                    $lastObjectHitLines = 0
+                }
+            }
+        }
+        if(-not ($lastObjectId -eq 0))
+        {
+            $data = @{"ObjectId"=$lastObjectId ;"ObjectType"=$lastObjectType; "TotalLines" = $lastObjectTotalLines; "HitLines"=$lastObjectHitLines}
+            $alObjects += $data;
+        }
+        return $alObjects
+    }
+
+    function getCodeLinesTotal {
+        Param(
+            [Parameter(Mandatory=$true)]
+            $codeCoverage
+        )
+        $codeLineCnt = 0
+        $hitLineCnt = 0
+        foreach($jsonObj in $codeCoverage)
+        {
+            if($jsonObj.LineType -eq 'Code' -and $jsonObj.ObjectID -ge 0 -and (-not($jsonObj.ObjectID -ge 50000 -and $jsonObj.ObjectID -le 99999)))
+            {
+                $codeLineCnt++;
+                if($jsonObj.NoOfHits -gt 0)
+                {
+                    $hitLineCnt++;
+                }
+            }
+        }
+        $coverage = [Math]::Round($(($hitLineCnt / $codeLineCnt) * 100 ), 2)
+        $data = "Coverage percent is: " + $coverage + '%' + ";Total Lines: " + $codeLineCnt + ";HitLines: " + $hitLineCnt
+        
+        #try
+        #{
+        #    "coveragePercent=$([string]$coverage)" >> $ENV:GITHUB_ENV
+        #    "coverageTotalLines=$([string]$codeLineCnt)" >> $ENV:GITHUB_ENV
+        #    "coverageHitLines=$([string]$hitLineCnt)" >> $ENV:GITHUB_ENV
+        #}
+        #catch
+        #{
+        #    $ErrorDetails = ConvertFrom-Json $_.ErrorDetails
+        #    Write-Host "Env: " ErrorDetails.error.message -ForegroundColor DarkRed
+        #}
+        $json = @{ CoveragePercent = "$coverage"
+                TotalLines= "$codeLineCnt"
+                HitLines= $hitLineCnt }
+
+        $coveragePercentagePath = Join-Path -Path $ENV:GITHUB_WORKSPACE -ChildPath "codecoverage_percentage.json"
+        $json | ConvertTo-Json -Depth 10 | Out-File $coveragePercentagePath
+        
+        return $data
+    }
+    $username = "admin"
+    $password = "G/7gwmfohn5bacdf4oo"
+    
+    $companyName = "CRONUS USA, Inc."
+    $launchConfigName = "Your own server"
+    $containerResultPath = "C:\ProgramData\BcContainerHelper"
+    $codeCoveragePath =  ".//.altestrunner//codecoverage.json"
+    $appExtensionId = "b89e8864-bc6b-4d4e-bed4-b768b3982753"
+    
+    $credential = New-Object System.Management.Automation.PSCredential ($username, (ConvertTo-SecureString $password -AsPlainText -Force))
+###########
+
+
+
     Write-Host "Invoke Run-AlPipeline with buildmode $buildMode"
     Run-AlPipeline @runAlPipelineParams `
         -accept_insiderEula `
         -pipelinename $workflowName `
+        -credential $credential `
         -containerName $containerName `
         -imageName $imageName `
         -bcAuthContext $authContext `
@@ -397,7 +500,8 @@ try {
         -testResultsFormat 'JUnit' `
         -customCodeCops $settings.customCodeCops `
         -gitHubActions `
-        -failOn $settings.failOn `
+        -failOn $settings.failOn `        
+        -keepContainer:$true `
         -treatTestFailuresAsWarnings:$settings.treatTestFailuresAsWarnings `
         -rulesetFile $settings.rulesetFile `
         -enableExternalRulesets:$settings.enableExternalRulesets `
@@ -408,7 +512,70 @@ try {
         -CreateRuntimePackages:$CreateRuntimePackages `
         -appBuild $appBuild -appRevision $appRevision `
         -uninstallRemovedApps
+        
+    cd $ENV:GITHUB_WORKSPACE
+    cd "Vertex Tax Links for Dynamics 365 Business Central"
+    
+    if ($null -eq (Get-Module ALTestRunner)) {Import-Module "..\.AL-Go\PowerShell\ALTestRunner.psm1" -DisableNameChecking}
+    $company = Get-CompanyInBcContainer -containerName $containerName -tenant "default"
+    $testRunnerServiceUrl = "http://"+$containerName+":7048/BC/ODataV4/TestRunner?company=CRONUS%20USA%2C%20Inc.&tenant=default" #1395b029-16d7-ec11-bb45-000d3a39ac50
+   
+    Set-ALTestRunnerCredential -Credential $credential
+    Set-ALTestRunnerConfigValue -KeyName "companyName" -KeyValue $companyName
+    Set-ALTestRunnerConfigValue -KeyName "launchConfigName" -KeyValue $launchConfigName
+    Set-ALTestRunnerConfigValue -KeyName "containerResultPath" -KeyValue $containerResultPath
+    Set-ALTestRunnerConfigValue -KeyName "codeCoveragePath" -KeyValue $codeCoveragePath
+    Set-ALTestRunnerConfigValue -KeyName "testRunnerServiceUrl" -KeyValue $testRunnerServiceUrl
 
+
+    #Invoke-TestRunnerService -Init -Verbose
+    Invoke-ALTestRunner -Tests Codeunit -ExtensionId $appExtensionId -GetCodeCoverage -ContainerName $containerName -Verbose
+    Write-Host "ALTestRunner is finished"
+    
+    
+    Write-Host "Start codecoverage report generating...."
+    
+    $coverageContent = ""
+    if(Test-Path -Path $codeCoveragePath)
+    {
+        $coverageContent = Get-Content -Path $codeCoveragePath
+    }
+    else
+    {
+        Write-Host "Path not found: " $codeCoveragePath
+        $appPath = Join-Path -Path $ENV:GITHUB_WORKSPACE -ChildPath "Vertex Tax Links for Dynamics 365 Business Central"
+        $codeCoveragePath = Join-Path -Path $appPath -ChildPath ".altestrunner/codecoverage.json"
+        $coverageContent = Get-Content -Path $codeCoveragePath
+    }
+    Write-Host $coverageContent.Length
+    
+    $jsonArray = ($coverageContent | ConvertFrom-Json)
+    Write-Host "Get AL object from CodeCoverage report..."
+    $objArray = getALObjectFromCodeCoverage($jsonArray) 
+    Write-Host "Generating table..."
+    $Array = @()
+
+    $objArray | ForEach-Object {
+        if($_)
+        {
+            $Array += [pscustomobject]@{
+                ObjectID = $_.ObjectID
+                ObjectType = $_.ObjectType
+                TotalLines = $_.TotalLines
+                HitLines = $_.HitLines
+            }
+        }
+    }
+
+    getCodeLinesTotal($jsonArray)
+    $coverageJsonPath = Join-Path -Path $ENV:GITHUB_WORKSPACE -ChildPath "codecoverage.json"
+    $coverageContent | Out-File -FilePath $coverageJsonPath
+    
+    $coverageReportPath = Join-Path -Path $ENV:GITHUB_WORKSPACE -ChildPath "coverage_report.csv"
+    $Array | Export-Csv -Path $coverageReportPath -NoTypeInformation
+
+    Remove-BcContainer -containerName  $containerName
+    #################
     if ($containerBaseFolder) {
 
         Write-Host "Copy artifacts and build output back from build container"
