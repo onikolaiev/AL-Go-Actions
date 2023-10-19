@@ -500,8 +500,8 @@ try {
         -testResultsFormat 'JUnit' `
         -customCodeCops $settings.customCodeCops `
         -gitHubActions `
-        -failOn $settings.failOn `        
-        -keepContainer `
+        -failOn $settings.failOn ` 
+	-keepContainer `
         -treatTestFailuresAsWarnings:$settings.treatTestFailuresAsWarnings `
         -rulesetFile $settings.rulesetFile `
         -enableExternalRulesets:$settings.enableExternalRulesets `
