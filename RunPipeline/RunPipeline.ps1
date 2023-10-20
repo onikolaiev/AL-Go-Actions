@@ -339,7 +339,6 @@ try {
     "installPerformanceToolkit",
     "enableCodeCop",
     "enableAppSourceCop",
-    "keepContainer",
     "enablePerTenantExtensionCop",
     "enableUICop" | ForEach-Object {
         if ($settings."$_") { $runAlPipelineParams += @{ "$_" = $true } }
@@ -511,7 +510,8 @@ try {
         -buildArtifactFolder $buildArtifactFolder `
         -CreateRuntimePackages:$CreateRuntimePackages `
         -appBuild $appBuild -appRevision $appRevision `
-        -uninstallRemovedApps
+        -uninstallRemovedApps `
+	-keepContainer
         
     cd $ENV:GITHUB_WORKSPACE
     cd "Vertex Tax Links for Dynamics 365 Business Central"
