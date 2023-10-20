@@ -339,6 +339,7 @@ try {
     "installPerformanceToolkit",
     "enableCodeCop",
     "enableAppSourceCop",
+    "keepContainer",
     "enablePerTenantExtensionCop",
     "enableUICop" | ForEach-Object {
         if ($settings."$_") { $runAlPipelineParams += @{ "$_" = $true } }
@@ -500,8 +501,7 @@ try {
         -testResultsFormat 'JUnit' `
         -customCodeCops $settings.customCodeCops `
         -gitHubActions `
-        -failOn $settings.failOn ` 
-	-keepContainer `
+        -failOn $settings.failOn `
         -treatTestFailuresAsWarnings:$settings.treatTestFailuresAsWarnings `
         -rulesetFile $settings.rulesetFile `
         -enableExternalRulesets:$settings.enableExternalRulesets `
